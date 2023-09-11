@@ -7,9 +7,8 @@
 #define PORT 8080
 #define REPO_PATH "."
 
-git_repository* repo = NULL;
-
 /* TEMPLATES */
+
 char** base_template;
 char** index_template;
 char** repo_template;
@@ -20,16 +19,9 @@ void initialize_templates() {
     repo_template = template_new("./templates/repo.html");
 }
 
-struct http_response_s* root_endpoint() {
-    struct http_response_s* response = http_response_init();
-    http_response_status(response, 200);
-    http_response_header(response, "Content-Type", "text/html");
-    char* context[] = {"", index_template[0], NULL};
-    char* text = template_render(base_template, context);
-    http_response_body(response, text, strlen(text));
-    /* free(text); */ // causes memory corruption (!?) (C ...)
-    return response;
-}
+/* EXTRACTORS + HELPERS */
+
+git_repository* repo = NULL;
 
 typedef struct {
     char* id;
@@ -84,6 +76,19 @@ commit_array* get_commit_messages(git_oid *commit_oid) {
     return commits;
 }
 
+/* ENDPOINTS */
+
+struct http_response_s* root_endpoint() {
+    struct http_response_s* response = http_response_init();
+    http_response_status(response, 200);
+    http_response_header(response, "Content-Type", "text/html");
+    char* context[] = {"", index_template[0], NULL};
+    char* text = template_render(base_template, context);
+    http_response_body(response, text, strlen(text));
+    /* free(text); */ // causes memory corruption (!?) (C ...)
+    return response;
+}
+
 struct http_response_s* repo_endpoint() {
     // Get the HEAD reference
     git_reference* head_ref = NULL;
@@ -119,6 +124,8 @@ struct http_response_s* repo_endpoint() {
 
     return response;
 }
+
+/* SERVER CODE */
 
 void handle_request(struct http_request_s* request) {
     char* url = http_request_path(request);
