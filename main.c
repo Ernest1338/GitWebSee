@@ -123,9 +123,11 @@ char* get_file_tree() {
 
     while ((de = readdir(dr)) != NULL) {
         if (strcmp(de->d_name, ".") != 0 && strcmp(de->d_name, "..") != 0) {
-            strcat(file_tree, "<li>");
+            char tmp[100];
+            sprintf(tmp, "<li><a href=\"/file?%s\">", de->d_name);
+            strcat(file_tree, tmp);
             strcat(file_tree, de->d_name);
-            strcat(file_tree, "</li>");
+            strcat(file_tree, "</a></li>");
         }
     }
 
@@ -145,6 +147,25 @@ struct http_response_s* root_endpoint() {
     char* text = template_render(base_template, context);
     http_response_body(response, text, strlen(text));
     /* free(text); */ // causes memory corruption (!?) (C ...)
+    return response;
+}
+
+struct http_response_s* file_endpoint(http_string_t query_str) {
+    struct http_response_s* response = http_response_init();
+    http_response_status(response, 200);
+    http_response_header(response, "Content-Type", "text/html");
+    char* text = malloc(100000);
+    strcat(text, "<h2>");
+    strcat(text, query_str.buf);
+    strcat(text, "</h2>");
+    strcat(text, "<pre>");
+    strcat(text, read_to_string(query_str.buf));
+    strcat(text, "</pre>");
+    char* file_tree = get_file_tree();
+    strcat(text, file_tree);
+    char* context[] = {"", text, NULL};
+    char* resp_body = template_render(base_template, context);
+    http_response_body(response, resp_body, strlen(resp_body));
     return response;
 }
 
@@ -211,6 +232,8 @@ void handle_request(struct http_request_s* request) {
         response = root_endpoint();
     } else if (strcmp(url, "/repo") == 0) {
         response = repo_endpoint();
+    } else if (strcmp(url, "/file") == 0) {
+        response = file_endpoint(query_str);
     } else {
         response = http_quick_response(404, "404 not found!");
     }
