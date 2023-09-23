@@ -1,5 +1,5 @@
 #define HTTPSERVER_IMPL
-#include "httpserver.h"
+#include "cmicroweb.h"
 
 #include <git2.h>
 #include <stdio.h>
@@ -284,17 +284,11 @@ struct http_response_s* repo_endpoint() {
     return response;
 }
 
-void trim_querystring(char* s) {
-    strtok(s, "?");
-}
-
 /* SERVER CODE */
 
 void handle_request(struct http_request_s* request) {
     char* url = http_request_path(request);
     struct http_string_s query_str = http_request_querystring(request);
-
-    trim_querystring(url);
 
     struct http_response_s* response;
     if (strcmp(url, "/") == 0) {
