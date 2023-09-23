@@ -87,7 +87,7 @@ char* read_to_string(const char* file_path) {
     long file_size = ftell(file);
     fseek(file, 0, SEEK_SET);
 
-    char* content = malloc(file_size + 1);
+    char* content = malloc(file_size + 100);
     if (content == NULL) {
         fclose(file);
         return NULL;
@@ -119,7 +119,7 @@ char* get_file_tree() {
     }
 
     char* file_tree = malloc(100000);
-    strcat(file_tree, "<pre><h2>File Tree</h2><ul>");
+    strcat(file_tree, "<h2>File Tree</h2><pre><ul>");
 
     while ((de = readdir(dr)) != NULL) {
         if (strcmp(de->d_name, ".") != 0 && strcmp(de->d_name, "..") != 0) {
@@ -135,6 +135,31 @@ char* get_file_tree() {
 
     closedir(dr);
     return file_tree;
+}
+
+git_commit* get_commit(char* commit_id) {
+    git_commit* commit;
+    git_oid oid;
+    git_oid_fromstr(&oid, commit_id);
+    git_commit_lookup(&commit, repo, &oid);
+    return commit;
+}
+
+typedef struct {
+    char* diff_string;
+    size_t len;
+} diff_payload;
+
+int print_cb(const git_diff_delta *delta, const git_diff_hunk *hunk, const git_diff_line *line, void *payload) {
+    (void)delta; (void)hunk; // Unused parameters
+
+    diff_payload *dp = (diff_payload*)payload;
+    dp->diff_string = realloc(dp->diff_string, dp->len + line->content_len + 1);
+    memcpy(dp->diff_string + dp->len, line->content, line->content_len);
+    dp->len += line->content_len;
+    dp->diff_string[dp->len] = '\0';
+
+    return 0;
 }
 
 /* ENDPOINTS */
@@ -154,15 +179,61 @@ struct http_response_s* file_endpoint(http_string_t query_str) {
     struct http_response_s* response = http_response_init();
     http_response_status(response, 200);
     http_response_header(response, "Content-Type", "text/html");
+    char* file_name = query_str.buf;
+    char* file_content = read_to_string(file_name);
     char* text = malloc(100000);
     strcat(text, "<h2>");
-    strcat(text, query_str.buf);
+    strcat(text, file_name);
     strcat(text, "</h2>");
     strcat(text, "<pre>");
-    strcat(text, read_to_string(query_str.buf));
+    strcat(text, file_content);
     strcat(text, "</pre>");
     char* file_tree = get_file_tree();
     strcat(text, file_tree);
+    char* context[] = {"", text, NULL};
+    char* resp_body = template_render(base_template, context);
+    http_response_body(response, resp_body, strlen(resp_body));
+    return response;
+}
+
+struct http_response_s* commit_endpoint(http_string_t query_str) {
+    struct http_response_s* response = http_response_init();
+    http_response_status(response, 200);
+    http_response_header(response, "Content-Type", "text/html");
+
+    char* commit_id = query_str.buf;
+    git_commit* commit = get_commit(commit_id);
+    char* text = malloc(100000);
+    strcat(text, "<h2>");
+    strcat(text, commit_id);
+    strcat(text, "</h2>");
+
+    const git_signature* commit_author = git_commit_author(commit);
+    char tmp[100];
+    sprintf(tmp, "<h3>Author: %s</h3>\n", commit_author->name);
+    strcat(text, tmp);
+
+    git_commit* parent;
+    git_commit_parent(&parent, commit, 0);
+
+    git_diff* diff;
+    git_tree* commit_tree, *parent_tree;
+    git_commit_tree(&commit_tree, commit);
+    git_commit_parent(&parent, commit, 0);
+    git_commit_tree(&parent_tree, parent);
+    git_diff_tree_to_tree(&diff, repo, parent_tree, commit_tree, NULL);
+
+    diff_payload dp = {NULL, 0};
+    git_diff_print(diff, GIT_DIFF_FORMAT_PATCH, print_cb, &dp);
+    strcat(text, "<pre>");
+    strcat(text, dp.diff_string);
+    strcat(text, "</pre>");
+
+    git_commit_free(commit);
+    git_commit_free(parent);
+    git_diff_free(diff);
+    free(dp.diff_string);
+
     char* context[] = {"", text, NULL};
     char* resp_body = template_render(base_template, context);
     http_response_body(response, resp_body, strlen(resp_body));
@@ -184,7 +255,7 @@ struct http_response_s* repo_endpoint() {
     http_response_header(response, "Content-Type", "text/html");
 
     char* readme_content = get_readme();
-    strcat(text, "<pre>");
+    strcat(text, "<h2>README</h2><pre>");
     strcat(text, readme_content);
     strcat(text, "</pre>");
 
@@ -192,9 +263,9 @@ struct http_response_s* repo_endpoint() {
     strcat(text, file_tree);
 
     char buf[1000];
-    strcat(text, "<table><thead><tr><th>Commit ID</th><th>Commit Message</th></tr></thead><tbody>");
+    strcat(text, "<h2>Commit History</h2><table><thead><tr><th>Commit ID</th><th>Commit Message</th></tr></thead><tbody>");
     for (int i = 0; i < commits->size; i++) {
-        sprintf(buf, "<tr><td>%s</td><td>%s</td></tr>", commits->commits[i].id, commits->commits[i].message);
+        sprintf(buf, "<tr><td><a href=\"/commit?%s\">%s</a></td><td>%s</td></tr>", commits->commits[i].id, commits->commits[i].id, commits->commits[i].message);
         strcat(text, buf);
     }
     strcat(text, "</tbody></table>");
@@ -234,6 +305,8 @@ void handle_request(struct http_request_s* request) {
         response = repo_endpoint();
     } else if (strcmp(url, "/file") == 0) {
         response = file_endpoint(query_str);
+    } else if (strcmp(url, "/commit") == 0) {
+        response = commit_endpoint(query_str);
     } else {
         response = http_quick_response(404, "404 not found!");
     }
