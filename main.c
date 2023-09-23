@@ -12,12 +12,10 @@
 
 char** base_template;
 char** index_template;
-char** repo_template;
 
 void initialize_templates() {
     base_template = template_new("./templates/base.html");
     index_template = template_new("./templates/index.html");
-    repo_template = template_new("./templates/repo.html");
 }
 
 /* EXTRACTORS + HELPERS */
