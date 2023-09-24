@@ -180,12 +180,7 @@ struct http_response_s* file_endpoint(http_string_t query_str) {
     char* file_name = query_str.buf;
     char* file_content = read_to_string(file_name);
     char* text = malloc(100000);
-    strcat(text, "<h2>");
-    strcat(text, file_name);
-    strcat(text, "</h2>");
-    strcat(text, "<pre>");
-    strcat(text, file_content);
-    strcat(text, "</pre>");
+    snprintf(text, 100000, "<h2>%s</h2><pre>%s</pre>", file_name, file_content);
     char* file_tree = get_file_tree();
     strcat(text, file_tree);
     char* context[] = {"", text, NULL};
@@ -287,8 +282,8 @@ struct http_response_s* repo_endpoint() {
 /* SERVER CODE */
 
 void handle_request(struct http_request_s* request) {
-    char* url = http_request_path(request);
     struct http_string_s query_str = http_request_querystring(request);
+    char* url = http_request_path(request);
 
     struct http_response_s* response;
     if (strcmp(url, "/") == 0) {
